@@ -25,7 +25,9 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'pursuit_node = fly_catcher_controller.pursuit_node:main'
+            'pursuit_node = fly_catcher_controller.pursuit_node:main',
+            'velocity_pursuit_node = fly_catcher_controller.velocity_pursuit_node:main',
+            'circular_pursuit_node = fly_catcher_controller.circular_pursuit_node:main',
         ],
     },
 )
