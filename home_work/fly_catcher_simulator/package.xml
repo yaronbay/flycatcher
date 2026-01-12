@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>fly_catcher_simulator</name>
+  <version>0.0.1</version>
+  <description>Simple fly/drone simulator for fly-catching homework</description>
+
+  <maintainer email="you@todo.todo">you</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_python</buildtool_depend>
+
+  <depend>rclpy</depend>
+  <depend>geometry_msgs</depend>
+  <depend>nav_msgs</depend>
+
+  <!-- This is the key: DroneCmd comes from here -->
+  <depend>fly_catcher_interfaces</depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

@@ -1,0 +1,5 @@
+pursuit_node:
+  ros__parameters:
+    thrust_gain: 45.0
+    prediction_horizon: 0.2
+    catch_threshold: 0.2
