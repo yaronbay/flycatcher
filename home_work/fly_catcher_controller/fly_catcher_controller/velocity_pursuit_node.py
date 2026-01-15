@@ -14,25 +14,30 @@ class VelocityPursuitController(Node):
         self.declare_parameter('catch_threshold', 0.2)
         self.dt = 0.1  # 10Hz loop
         
-        # --- Kalman Filter State (6D) ---
+        # --- 6D Kalman Filter State ---
         # State x = [px, py, pz, vx, vy, vz]
         self.x = np.zeros(6)
-        self.P = np.eye(6) * 1.0
+        #self.P = np.eye(6) #* 0.1
+        self.P = P = np.diag([0.01, 0.01, 0.01, 1.0, 1.0, 1.0])
         
-        # Transition Matrix (F) - Constant Velocity Model
+        # Transition Matrix (F)
         self.F = np.eye(6)
         self.F[0, 3] = self.F[1, 4] = self.F[2, 5] = self.dt
         
-        # Measurement Matrix (H) - We only measure position [x, y, z]
-        self.H = np.zeros((3, 6))
-        self.H[0:3, 0:3] = np.eye(3)
+        # measurement matrix measures 6 states [pos + vel]
+        # velocity is not observed but being calculated from the location
+        self.H = np.eye(6)
         
-        self.Q = np.eye(6) * 0.05  # Process noise
-        self.R = np.eye(3) * 0.1   # Measurement noise
+        # Noise Matrices (Tuned for Simulator "Ground Truth")
+        self.Q = np.eye(6) * 0.01  # Process noise (Fly intent)
+        self.R = np.eye(6) * 0.001 # Measurement noise (Sensor trust)
         
+        # Logic Variables
         self.initialized_kf = False
         self.first_catch_recorded = False
         self.drone_pos = None
+        self.last_fly_pos = None
+        self.last_fly_time = None
         self.start_time = None
 
         # Publishers & Subscribers
@@ -42,7 +47,7 @@ class VelocityPursuitController(Node):
         self.marker_pub = self.create_publisher(Marker, '/visualization_marker', 10)
         self.click_pub = self.create_publisher(PointStamped, '/clicked_point', 10)
 
-        # Unique Visuals for Velocity Node (Magenta/Green)
+        # Visuals
         self.drone_line = self.init_line_marker(10, (1.0, 0.0, 1.0)) # Magenta
         self.fly_line = self.init_line_marker(11, (0.0, 1.0, 0.0))   # Green
 
@@ -60,27 +65,43 @@ class VelocityPursuitController(Node):
         return m
 
     def fly_cb(self, msg):
-        z = np.array([msg.point.x, msg.point.y, msg.point.z])
+        now = self.get_clock().now()
+        current_pos = np.array([msg.point.x, msg.point.y, msg.point.z])
         
         if not self.initialized_kf:
-            self.x[0:3] = z
+            self.x[0:3] = current_pos
+            self.last_fly_pos = current_pos
+            self.last_fly_time = now
             self.initialized_kf = True
-            self.start_time = self.get_clock().now()
+            self.start_time = now
             return
 
-        # KF Prediction
+        # caculate velocity
+        dt = (now - self.last_fly_time).nanoseconds / 1e9
+        if dt <= 0: return
+        
+        measured_vel = (current_pos - self.last_fly_pos) / dt
+        
+        # mesurment
+        z = np.concatenate([current_pos, measured_vel])
+
+        # prediction
         self.x = self.F @ self.x
         self.P = self.F @ self.P @ self.F.T + self.Q
 
-        # KF Update (Correction)
+        # update
         y = z - (self.H @ self.x)
         S = self.H @ self.P @ self.H.T + self.R
         K = self.P @ self.H.T @ np.linalg.inv(S)
         self.x = self.x + K @ y
         self.P = (np.eye(6) - K @ self.H) @ self.P
 
-        # Update Fly Path Marker
-        self.fly_line.header.stamp = self.get_clock().now().to_msg()
+        # push positions
+        self.last_fly_pos = current_pos
+        self.last_fly_time = now
+
+        # update marker array
+        self.fly_line.header.stamp = now.to_msg()
         self.fly_line.points.append(msg.point)
         self.marker_pub.publish(self.fly_line)
 
@@ -90,7 +111,6 @@ class VelocityPursuitController(Node):
             msg.pose.pose.position.y,
             msg.pose.pose.position.z
         ])
-        # Update Drone Path Marker
         p = Point(x=self.drone_pos[0], y=self.drone_pos[1], z=self.drone_pos[2])
         self.drone_line.header.stamp = self.get_clock().now().to_msg()
         self.drone_line.points.append(p)
@@ -100,40 +120,34 @@ class VelocityPursuitController(Node):
         if not self.initialized_kf or self.drone_pos is None:
             return
         
-        # 1. Calculate the current real distance to the fly
-        real_dist_to_fly = np.linalg.norm(self.x[0:3] - self.drone_pos)
+        # Real distance for logic
+        dist_vec = self.x[0:3] - self.drone_pos
+        real_dist = np.linalg.norm(dist_vec)
         
-        # 2. ADAPTIVE LOOK-AHEAD CALCULATION
-        # We want 0.6s at 3 meters out, and 0.1s when we are 0.5 meters out
-        # Slope formula: look_ahead = distance * 0.2
-        #raw_look_ahead = real_dist_to_fly * 0.2
-        look_ahead = float(np.clip(real_dist_to_fly, 0.1, 0.6))
+        # Adaptive Look-Ahead (L grows with distance)
+        look_ahead = np.clip(real_dist * 0.25, 0.1, 0.7)
         
-        # 3. Prediction based on adaptive time
+        # Future Prediction: P_future = P_now + (V_now * L)
         p_predicted = self.x[0:3] + (self.x[3:6] * look_ahead)
         diff_to_predicted = p_predicted - self.drone_pos
         
-        # 4. Extract Fly Velocity for Feed-Forward
         fly_vel_mag = np.linalg.norm(self.x[3:6])
-        
         cmd = DroneCmd()
         
-        # --- CATCH CHECK ---
-        if real_dist_to_fly < self.get_parameter('catch_threshold').value:
+        if real_dist < self.get_parameter('catch_threshold').value:
             cmd.thrust = 0.0
             if not self.first_catch_recorded:
                 self.first_catch_recorded = True
                 duration = (self.get_clock().now() - self.start_time).nanoseconds / 1e9
                 self.publish_success(duration)
         else:
-            # --- SMOOTH THRUST (Proportional + Feed-Forward) ---
-            # Using our dynamic thrust equation to ensure we overtake the fly
-            feed_forward_gain = 30.0 
-            kp = 50.0 
-            thrust_needed = (fly_vel_mag * feed_forward_gain) + (kp * real_dist_to_fly)
+            # P + Feed-Forward (Ensure drone is always faster than fly)
+            kp = 45.0
+            k_ff = 32.0 
+            thrust_needed = (fly_vel_mag * k_ff) + (kp * real_dist)
             cmd.thrust = float(np.clip(thrust_needed, 15.0, 100.0))
 
-            # --- STEERING ---
+            # Steering toward the future point
             cmd.yaw = np.arctan2(diff_to_predicted[1], diff_to_predicted[0])
             cmd.pitch = np.arctan2(diff_to_predicted[2], np.linalg.norm(diff_to_predicted[:2]))
 
@@ -141,12 +155,14 @@ class VelocityPursuitController(Node):
         self.publish_prediction_marker(p_predicted)
 
     def publish_success(self, elapsed):
-        self.get_logger().info(f"VELOCITY CATCH SUCCESS: {elapsed:.2f}s")
+        self.get_logger().info(f"Catch Success: {elapsed:.2f}s")
+       
         msg = PointStamped()
         msg.header.frame_id = "map"
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.point.x, msg.point.y, msg.point.z = self.drone_pos.tolist()
         self.click_pub.publish(msg)
+        self.get_logger().info(f"location coodiante is:[{ msg.point.x:.2f}, { msg.point.y:.2f}, { msg.point.z:.2f}] ")
 
     def publish_prediction_marker(self, pos):
         m = Marker()
@@ -155,8 +171,8 @@ class VelocityPursuitController(Node):
         m.id = 99
         m.type = Marker.SPHERE
         m.pose.position.x, m.pose.position.y, m.pose.position.z = pos.tolist()
-        m.scale.x = m.scale.y = m.scale.z = 0.15
-        m.color.a = 1.0; m.color.r = 1.0; m.color.g = 1.0; m.color.b = 0.0 # Yellow Prediction
+        m.scale.x = m.scale.y = m.scale.z = 0.2
+        m.color.a = 1.0; m.color.r = 1.0; m.color.g = 1.0; m.color.b = 0.0 # Yellow
         self.marker_pub.publish(m)
 
 def main(args=None):

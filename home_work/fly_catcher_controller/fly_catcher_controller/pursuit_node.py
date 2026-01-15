@@ -1,3 +1,5 @@
+## this code is a text code
+
 import rclpy
 from rclpy.node import Node
 import numpy as np

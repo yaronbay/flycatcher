@@ -13,7 +13,7 @@ class CircularPursuitController(Node):
         # --- CTRV State: [x, y, z, v, yaw, yaw_rate] ---
         self.x = np.zeros(6) 
         self.P = np.eye(6) * 1.0
-        self.dt = 0.1
+        self.dt = 0.1 #
         
         # Noise settings
         self.Q = np.diag([0.05, 0.05, 0.05, 0.1, 0.1, 0.05])
