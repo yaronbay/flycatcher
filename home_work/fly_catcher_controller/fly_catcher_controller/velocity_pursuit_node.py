@@ -34,7 +34,6 @@ class VelocityPursuitController(Node):
         self.F[0, 3] = self.F[1, 4] = self.F[2, 5] = self.dt
         self.H = np.eye(6) # Full state observer (pos + vel)
         
-        # Logic Variables
         self.initialized_kf = False
         self.first_catch_recorded = False
         self.drone_pos = None
@@ -42,16 +41,16 @@ class VelocityPursuitController(Node):
         self.last_fly_time = None
         self.start_time = None
 
-        # Pubs/Subs
+        # initial publisher and subscribers
         self.fly_sub = self.create_subscription(PointStamped, '/fly/position', self.fly_cb, 10)
         self.drone_sub = self.create_subscription(Odometry, '/drone/state', self.drone_cb, 10)
         self.cmd_pub = self.create_publisher(DroneCmd, '/drone/cmd', 10)
         self.marker_pub = self.create_publisher(Marker, '/visualization_marker', 10)
         self.click_pub = self.create_publisher(PointStamped, '/clicked_point', 10)
 
-        # Visuals
-        self.drone_line = self.init_line_marker(10, (1.0, 0.0, 1.0)) # Magenta
-        self.fly_line = self.init_line_marker(11, (0.0, 1.0, 0.0))   # Green
+        # rviz visuals
+        self.drone_line = self.init_line_marker(10, (1.0, 0.0, 1.0)) # magenta
+        self.fly_line = self.init_line_marker(11, (0.0, 1.0, 0.0))   # green
 
         self.timer = self.create_timer(self.dt, self.control_loop)
 
@@ -76,7 +75,7 @@ class VelocityPursuitController(Node):
             self.initialized_kf, self.start_time = True, now
             return
 
-        # 1. Calculate Derivative Velocity
+        # 1. Calculate Derivative Velocity - to be more precise (not abolute t=0.1s)
         dt = (now - self.last_fly_time).nanoseconds / 1e9
         if dt <= 0: return
         measured_vel = (current_pos - self.last_fly_pos) / dt
@@ -97,7 +96,7 @@ class VelocityPursuitController(Node):
         self.x += K @ y
         self.P = (np.eye(6) - K @ self.H) @ self.P
 
-        # Bookkeeping
+        # add point to fly line
         self.last_fly_pos, self.last_fly_time = current_pos, now
         self.fly_line.points.append(msg.point)
         self.marker_pub.publish(self.fly_line)
@@ -128,9 +127,7 @@ class VelocityPursuitController(Node):
         t_min = self.get_parameter('min_thrust').value
         t_max = self.get_parameter('max_thrust').value
 
-        
-
-        # --- Math ---
+        # det distance
         dist_vec = self.x[0:3] - self.drone_pos
         real_dist = np.linalg.norm(dist_vec)
         
