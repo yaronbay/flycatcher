@@ -12,27 +12,27 @@ class VelocityPursuitController(Node):
         super().__init__('velocity_pursuit_node')
 
         # parameters declerations
-        self.declare_parameter('catch_threshold')   # Distance to trigger "Catch"
-        self.declare_parameter('kp_dist')          # Proportional gain for distance
-        self.declare_parameter('k_ff_vel')         # Feed-forward gain for speed matching
-        self.declare_parameter('look_ahead_ratio') # How much to look ahead vs distance
-        self.declare_parameter('min_look_ahead')    # Min seconds to look ahead
-        self.declare_parameter('max_look_ahead')    # Max seconds to look ahead
-        self.declare_parameter('min_thrust')       # Min motor power
-        self.declare_parameter('max_thrust')      # Max motor power
-        self.declare_parameter('q_noise')          # KF Process Noise
-        self.declare_parameter('r_noise')         # KF Measurement Noise
+        self.declare_parameter('catch_threshold')   # distance to trigger "catch"
+        self.declare_parameter('kp_dist')          # proportional gain for distance
+        self.declare_parameter('k_ff_vel')         # ff gain for speed matching
+        self.declare_parameter('look_ahead_ratio') # how much to look ahead
+        self.declare_parameter('min_look_ahead')    # min seconds to look ahead
+        self.declare_parameter('max_look_ahead')    # max seconds to look ahead
+        self.declare_parameter('min_thrust')       # min motor power
+        self.declare_parameter('max_thrust')      # max motor power
+        self.declare_parameter('q_noise')          #  Process noise
+        self.declare_parameter('r_noise')         #  Measurement noise
         self.declare_parameter('dt')
         self.declare_parameter('hold_after_catch', True)
 
-        self.dt = self.get_parameter('dt').value  # Control loop timing (10Hz)
+        self.dt = self.get_parameter('dt').value  #  (10Hz)
         
-        # --- 6D Kalman Filter Setup ---
+        # 6D Kalman Filter initialize
         self.x = np.zeros(6)
         self.P = np.eye(6) * 0.1
         self.F = np.eye(6)
         self.F[0, 3] = self.F[1, 4] = self.F[2, 5] = self.dt
-        self.H = np.eye(6) # Full state observer (pos + vel)
+        self.H = np.eye(6) 
         
         self.initialized_kf = False
         self.first_catch_recorded = False
@@ -81,7 +81,7 @@ class VelocityPursuitController(Node):
         measured_vel = (current_pos - self.last_fly_pos) / dt
         z = np.concatenate([current_pos, measured_vel])
 
-        # 2. Get Dynamic Noise Params
+        # 2. get dynamic noise params
         q_val = self.get_parameter('q_noise').value
         r_val = self.get_parameter('r_noise').value
         Q = np.eye(6) * q_val
@@ -131,7 +131,7 @@ class VelocityPursuitController(Node):
         dist_vec = self.x[0:3] - self.drone_pos
         real_dist = np.linalg.norm(dist_vec)
         
-        # Predictive Lead
+        # predictive lead
         look_ahead = np.clip(real_dist * ratio, l_min, l_max)
         p_predicted = self.x[0:3] + (self.x[3:6] * look_ahead)
         diff_to_predicted = p_predicted - self.drone_pos
@@ -145,7 +145,7 @@ class VelocityPursuitController(Node):
                 self.first_catch_recorded = True
                 self.publish_success()
         else:
-            # P + Feed-Forward Law
+            # P + Feed-Forward coomand
             thrust_calc = (fly_vel_mag * k_ff) + (kp * real_dist)
             cmd.thrust = float(np.clip(thrust_calc, t_min, t_max))
             cmd.yaw = np.arctan2(diff_to_predicted[1], diff_to_predicted[0])
