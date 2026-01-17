@@ -4,43 +4,49 @@ from launch import LaunchDescription
 from launch_ros.actions import Node
 
 def generate_launch_description():
-    # 1. Get directories
+    # 1. Setup paths
     pkg_name = 'fly_catcher_controller'
     pkg_share = get_package_share_directory(pkg_name)
     
-    # 2. Path to your existing RViz file
+    # Path to the RViz config
     rviz_config_path = os.path.join(pkg_share, 'rviz', 'fly_catcher.rviz')
+    
+    # Path to the NEW YAML parameter file
+    # (Ensure this file exists at fly_catcher_controller/config/params.yaml)
+    params_config_path = os.path.join(pkg_share, 'config', 'params.yaml')
 
-    # 3. Static Transform Publisher (Map to Base Link)
+    # 2. Static Transform Publisher (Map to Base Link)
     static_tf = Node(
         package='tf2_ros',
         executable='static_transform_publisher',
         arguments=['0', '0', '0', '0', '0', '0', 'map', 'base_link']
     )
 
-    # 4. Fly Simulator Node
+    # 3. Fly Simulator Node
     fly_sim = Node(
         package='fly_catcher_simulator',
         executable='fly',
         name='fly_sim'
     )
 
-    # 5. Drone Simulator Node
+    # 4. Drone Simulator Node
     drone_sim = Node(
         package='fly_catcher_simulator',
         executable='drone',
         name='drone_sim'
     )
 
-    # 6. Velocity Pursuit Controller (The new KF node)
+    # 5. Velocity Pursuit Controller
+    # We replaced the hard-coded dictionary with the path to your YAML file
     velocity_pursuit = Node(
         package=pkg_name,
         executable='velocity_pursuit_node',
+        name='velocity_pursuit_node',  # Node name MUST match the top heading in YAML
         output='screen',
-        parameters=[{'catch_threshold': 0.2}]
+        parameters=[params_config_path] 
     )
 
-    # 7. RViz2 with your specific config file
+    # 6. RViz2
     rviz2 = Node(
         package='rviz2',
         executable='rviz2',

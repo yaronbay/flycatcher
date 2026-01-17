@@ -3,3 +3,18 @@ pursuit_node:
     thrust_gain: 45.0
     prediction_horizon: 0.2
     catch_threshold: 0.2
+
+/velocity_pursuit_node:
+  ros__parameters:
+    hold_after_catch: True   # If true, drone won't chase again after first catch
+    dt: 0.1                  #timstamp =  1/Hz
+    catch_threshold: 0.2
+    kp_dist: 50.0
+    k_ff_vel: 30.0
+    look_ahead_ratio: 0.5
+    min_look_ahead: 0.1
+    max_look_ahead: 0.7
+    min_thrust: 15.0
+    max_thrust: 100.0
+    q_noise: 0.01
+    r_noise: 0.001
