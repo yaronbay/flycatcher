@@ -1,4 +1,4 @@
-# Velocity Pursuit Fly Catcher
+# Pursuit Fly Catcher
 
 ## Overview
 
